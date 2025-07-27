@@ -1,4 +1,3 @@
-
 import React, { useState } from 'react';
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -9,7 +8,7 @@ import { Badge } from "@/components/ui/badge";
 import { Plus, Trash, Youtube, FileText, Check } from 'lucide-react';
 import { useAuth } from '@/hooks/use-auth';
 import { db } from "@/lib/firebaseConfig"; // Assuming you're using Firestore
-import { collection , addDoc } from "firebase/firestore";
+import { collection, addDoc } from "firebase/firestore";
 import { toast } from "@/hooks/use-toast";
 import { triggerCreationConfetti } from '@/utils/confetti';
 
@@ -23,11 +22,11 @@ const CourseForm: React.FC<CourseFormProps> = ({ onSuccess }) => {
   const [description, setDescription] = useState('');
   const [tags, setTags] = useState<string[]>([]);
   const [currentTag, setCurrentTag] = useState('');
-  const [modules, setModules] = useState([{ 
-    title: '', 
+  const [modules, setModules] = useState([{
+    title: '',
     content: '',
     youtubeUrl: '',
-    quizQuestions: [] as {question: string, options: string[], correctAnswer: number}[]
+    quizQuestions: [] as { question: string, options: string[], correctAnswer: number }[]
   }]);
   const [isSubmitting, setIsSubmitting] = useState(false);
 
@@ -43,8 +42,8 @@ const CourseForm: React.FC<CourseFormProps> = ({ onSuccess }) => {
   };
 
   const handleAddModule = () => {
-    setModules([...modules, { 
-      title: '', 
+    setModules([...modules, {
+      title: '',
       content: '',
       youtubeUrl: '',
       quizQuestions: []
@@ -72,9 +71,9 @@ const CourseForm: React.FC<CourseFormProps> = ({ onSuccess }) => {
   };
 
   const handleQuestionChange = (
-    moduleIndex: number, 
-    questionIndex: number, 
-    field: string, 
+    moduleIndex: number,
+    questionIndex: number,
+    field: string,
     value: string | number,
     optionIndex?: number
   ) => {
@@ -91,164 +90,140 @@ const CourseForm: React.FC<CourseFormProps> = ({ onSuccess }) => {
 
   const validateYoutubeUrl = (url: string): string => {
     if (!url.trim()) return '';
-    
-    // Handle various YouTube URL formats
+
     let videoId = '';
-    
-    // Format 1: youtube.com/watch?v=VIDEO_ID
-    const regExp1 = /^.*youtube\.com\/watch\?v=([^&]+).*/;
-    // Format 2: youtu.be/VIDEO_ID
-    const regExp2 = /^.*youtu\.be\/([^?]+).*/;
-    // Format 3: youtube.com/embed/VIDEO_ID
-    const regExp3 = /^.*youtube\.com\/embed\/([^?]+).*/;
-    
-    let match = url.match(regExp1);
-    
+    const youtubeRegex = /(?:https?:\/\/)?(?:www\.)?(?:m\.)?(?:youtube\.com|youtu\.be)\/(?:watch\?v=|embed\/|v\/|)([\w-]{11})(?:\S+)?/;
+    const match = url.match(youtubeRegex);
+
     if (match && match[1]) {
       videoId = match[1];
     } else {
-      match = url.match(regExp2);
-      if (match && match[1]) {
-        videoId = match[1];
-      } else {
-        match = url.match(regExp3);
-        if (match && match[1]) {
-          videoId = match[1];
-        }
+      // Handle the specific googleusercontent.com format if it's truly expected as input,
+      // though typically this is an internal/embedded URL, not what users paste.
+      // If users are pasting regular YouTube URLs, this specific regex won't match them,
+      // but the general youtubeRegex above should cover most cases.
+      const googleUserContentRegex = /googleusercontent\.com\/youtube\.com\/\d+\/([\w-]{11})/;
+      const googleMatch = url.match(googleUserContentRegex);
+      if (googleMatch && googleMatch[1]) {
+        videoId = googleMatch[1];
       }
     }
-    
-    // If we found a valid video ID, return the proper embed URL
+
     if (videoId) {
       return `https://www.youtube.com/embed/${videoId}`;
     }
-    
-    // If it's not recognized as a YouTube URL, return empty
-    // This allows the form validation to catch it
     return '';
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
-  e.preventDefault();
+    e.preventDefault();
 
-  if (!user) {
-    toast({
-      title: "Authentication Required",
-      description: "Please log in to create courses",
-      variant: "destructive",
-    });
-    return;
-  }
-
-  if (!title.trim() || !description.trim() || tags.length === 0) {
-    toast({
-      title: "Error",
-      description: "Please fill in all required fields",
-      variant: "destructive",
-    });
-    return;
-  }
-
-  if (modules.some(module => !module.title.trim())) {
-    toast({
-      title: "Error",
-      description: "All modules must have a title",
-      variant: "destructive",
-    });
-    return;
-  }
-
-  const courseRef = await addDoc(collection(db, "courses"), {
-  title,
-  description,
-  tags,
-  created_by: user.uid,
-  created_at: new Date().toISOString(),
-  status: "published"  // <-- NEW
-});
-
-
-  for (const module of modules) {
-    if (module.youtubeUrl.trim() && !validateYoutubeUrl(module.youtubeUrl)) {
+    if (!user) {
       toast({
-        title: "Error",
-        description: `Invalid YouTube URL in module "${module.title}"`,
+        title: "Authentication Required",
+        description: "Please log in to create courses",
         variant: "destructive",
       });
       return;
     }
-  }
 
-  setIsSubmitting(true);
+    if (!title.trim() || !description.trim() || tags.length === 0) {
+      toast({
+        title: "Error",
+        description: "Please fill in all required fields (Title, Description, Tags)",
+        variant: "destructive",
+      });
+      return;
+    }
 
-  try {
-    // 1. Create the course
-    const courseRef = await addDoc(collection(db, "courses"), {
-      title,
-      description,
-      tags,
-      created_by: user.uid,
-      created_at: new Date().toISOString()
-    });
+    if (modules.some(module => !module.title.trim())) {
+      toast({
+        title: "Error",
+        description: "All modules must have a title",
+        variant: "destructive",
+      });
+      return;
+    }
 
-    // 2. Create modules inside a subcollection
-    for (let i = 0; i < modules.length; i++) {
-      const module = modules[i];
-      const processedYoutubeUrl = validateYoutubeUrl(module.youtubeUrl);
-
-      const moduleRef = await addDoc(
-        collection(db, "courses", courseRef.id, "modules"),
-        {
-          title: module.title,
-          content: module.content,
-          youtube_url: processedYoutubeUrl,
-          position: i + 1
-        }
-      );
-
-      // 3. Add quiz questions for this module
-      for (const question of module.quizQuestions) {
-        await addDoc(
-          collection(db, "courses", courseRef.id, "modules", moduleRef.id, "quiz"),
-          {
-            question: question.question,
-            options: question.options,
-            correct_answer: question.correctAnswer
-          }
-        );
+    for (const module of modules) {
+      if (module.youtubeUrl.trim() && !validateYoutubeUrl(module.youtubeUrl)) {
+        toast({
+          title: "Error",
+          description: `Invalid YouTube URL in module "${module.title || 'Untitled Module'}"`,
+          variant: "destructive",
+        });
+        return;
       }
     }
 
-    toast({
-      title: "Course Created",
-      description: "Your course has been published successfully",
-    });
-    triggerCreationConfetti();
+    setIsSubmitting(true);
 
-    // Reset form
-    setTitle("");
-    setDescription("");
-    setTags([]);
-    setCurrentTag("");
-    setModules([
-      { title: "", content: "", youtubeUrl: "", quizQuestions: [] }
-    ]);
+    try {
+      // 1. Create the course
+      const courseRef = await addDoc(collection(db, "courses"), {
+        title,
+        description,
+        tags,
+        created_by: user.uid,
+        created_at: new Date().toISOString(),
+        status: "published"
+      });
 
-    if (onSuccess) onSuccess();
-  } catch (error: any) {
-    console.error("Error creating course:", error);
-    toast({
-      title: "Error",
-      description: error.message || "Failed to create course",
-      variant: "destructive",
-    });
-  } finally {
-    setIsSubmitting(false);
-  }
-};
+      // 2. Create modules inside a subcollection
+      for (let i = 0; i < modules.length; i++) {
+        const module = modules[i];
+        const processedYoutubeUrl = validateYoutubeUrl(module.youtubeUrl);
 
+        const moduleRef = await addDoc(
+          collection(db, "courses", courseRef.id, "modules"),
+          {
+            title: module.title,
+            content: module.content,
+            youtube_url: processedYoutubeUrl,
+            position: i + 1
+          }
+        );
 
+        // 3. Add quiz questions for this module
+        for (const question of module.quizQuestions) {
+          await addDoc(
+            collection(db, "courses", courseRef.id, "modules", moduleRef.id, "quiz"),
+            {
+              question: question.question,
+              options: question.options,
+              correct_answer: question.correctAnswer
+            }
+          );
+        }
+      }
 
+      toast({
+        title: "Course Created",
+        description: "Your course has been published successfully",
+      });
+      triggerCreationConfetti();
+
+      // Reset form
+      setTitle("");
+      setDescription("");
+      setTags([]);
+      setCurrentTag("");
+      setModules([
+        { title: "", content: "", youtubeUrl: "", quizQuestions: [] }
+      ]);
+
+      if (onSuccess) onSuccess();
+    } catch (error: any) {
+      console.error("Error creating course:", error);
+      toast({
+        title: "Error",
+        description: error.message || "Failed to create course",
+        variant: "destructive",
+      });
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
     if (e.key === 'Enter' && currentTag) {
@@ -261,7 +236,7 @@ const CourseForm: React.FC<CourseFormProps> = ({ onSuccess }) => {
   const renderYouTubePreview = (url: string) => {
     const embedUrl = validateYoutubeUrl(url);
     if (!embedUrl) return null;
-    
+
     return (
       <div className="mt-2">
         <p className="text-xs text-gray-500 mb-1">Preview:</p>
@@ -287,32 +262,32 @@ const CourseForm: React.FC<CourseFormProps> = ({ onSuccess }) => {
         <CardContent className="space-y-4">
           <div className="space-y-2">
             <Label htmlFor="course-title">Course Title</Label>
-            <Input 
-              id="course-title" 
-              placeholder="Enter course title" 
+            <Input
+              id="course-title"
+              placeholder="Enter course title"
               value={title}
               onChange={(e) => setTitle(e.target.value)}
               required
             />
           </div>
-          
+
           <div className="space-y-2">
             <Label htmlFor="course-description">Course Description</Label>
-            <Textarea 
-              id="course-description" 
-              placeholder="Describe what students will learn" 
+            <Textarea
+              id="course-description"
+              placeholder="Describe what students will learn"
               value={description}
               onChange={(e) => setDescription(e.target.value)}
               required
             />
           </div>
-          
+
           <div className="space-y-2">
             <Label htmlFor="course-tags">Tags</Label>
             <div className="flex">
-              <Input 
-                id="course-tags" 
-                placeholder="Add tags (e.g., 'javascript', 'web development')" 
+              <Input
+                id="course-tags"
+                placeholder="Add tags (e.g., 'javascript', 'web development')"
                 value={currentTag}
                 onChange={(e) => setCurrentTag(e.target.value)}
                 onKeyDown={handleKeyDown}
@@ -322,14 +297,14 @@ const CourseForm: React.FC<CourseFormProps> = ({ onSuccess }) => {
                 Add
               </Button>
             </div>
-            
+
             {tags.length > 0 && (
               <div className="flex flex-wrap gap-2 mt-2">
                 {tags.map((tag, index) => (
                   <Badge key={index} variant="secondary" className="flex items-center gap-1">
                     {tag}
-                    <button 
-                      type="button" 
+                    <button
+                      type="button"
                       onClick={() => handleRemoveTag(tag)}
                       className="text-gray-500 hover:text-gray-700 focus:outline-none"
                     >
@@ -342,24 +317,24 @@ const CourseForm: React.FC<CourseFormProps> = ({ onSuccess }) => {
           </div>
         </CardContent>
       </Card>
-      
+
       <div className="mb-6">
         <h3 className="text-lg font-medium mb-2">Course Modules</h3>
         <p className="text-sm text-gray-500 mb-4">
           Add modules to structure your course content
         </p>
       </div>
-      
+
       {modules.map((module, moduleIndex) => (
         <Card key={moduleIndex} className="mb-8 border-brand-100">
           <CardHeader className="bg-brand-50 rounded-t-lg">
             <div className="flex justify-between items-center">
               <CardTitle className="text-lg">Module {moduleIndex + 1}</CardTitle>
               {modules.length > 1 && (
-                <Button 
-                  type="button" 
-                  variant="outline" 
-                  size="sm" 
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
                   onClick={() => handleRemoveModule(moduleIndex)}
                   className="h-8 text-red-500"
                 >
@@ -371,34 +346,34 @@ const CourseForm: React.FC<CourseFormProps> = ({ onSuccess }) => {
           <CardContent className="space-y-4 pt-6">
             <div className="space-y-2">
               <Label htmlFor={`module-title-${moduleIndex}`}>Module Title</Label>
-              <Input 
-                id={`module-title-${moduleIndex}`} 
-                placeholder="Module title" 
+              <Input
+                id={`module-title-${moduleIndex}`}
+                placeholder="Module title"
                 value={module.title}
                 onChange={(e) => handleModuleChange(moduleIndex, 'title', e.target.value)}
                 required
               />
             </div>
-            
+
             <div className="space-y-2">
               <Label htmlFor={`module-content-${moduleIndex}`}>Content</Label>
-              <Textarea 
-                id={`module-content-${moduleIndex}`} 
-                placeholder="Module content and description" 
+              <Textarea
+                id={`module-content-${moduleIndex}`}
+                placeholder="Module content and description"
                 rows={4}
                 value={module.content}
                 onChange={(e) => handleModuleChange(moduleIndex, 'content', e.target.value)}
                 required
               />
             </div>
-            
+
             <div className="space-y-2">
               <Label htmlFor={`module-youtube-${moduleIndex}`} className="flex items-center">
                 <Youtube className="h-4 w-4 mr-1" /> YouTube Video URL
               </Label>
-              <Input 
-                id={`module-youtube-${moduleIndex}`} 
-                placeholder="https://youtube.com/watch?v=..." 
+              <Input
+                id={`module-youtube-${moduleIndex}`}
+                placeholder="https://www.youtube.com/watch?v=..."
                 value={module.youtubeUrl}
                 onChange={(e) => handleModuleChange(moduleIndex, 'youtubeUrl', e.target.value)}
               />
@@ -407,21 +382,21 @@ const CourseForm: React.FC<CourseFormProps> = ({ onSuccess }) => {
               </p>
               {module.youtubeUrl && renderYouTubePreview(module.youtubeUrl)}
             </div>
-            
+
             {/* Quiz Section */}
             <div className="mt-6 pt-4 border-t">
               <div className="flex justify-between items-center mb-4">
                 <h4 className="font-medium">Module Quiz Questions</h4>
-                <Button 
-                  type="button" 
-                  variant="outline" 
-                  size="sm" 
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
                   onClick={() => handleAddQuestion(moduleIndex)}
                 >
                   <Plus className="h-4 w-4 mr-1" /> Add Question
                 </Button>
               </div>
-              
+
               {module.quizQuestions.length === 0 ? (
                 <div className="text-center py-8 border border-dashed rounded-lg">
                   <FileText className="h-8 w-8 mx-auto text-gray-400 mb-2" />
@@ -434,10 +409,10 @@ const CourseForm: React.FC<CourseFormProps> = ({ onSuccess }) => {
                     <div key={qIndex} className="p-4 border rounded-lg">
                       <div className="flex justify-between items-center mb-3">
                         <h5 className="font-medium">Question {qIndex + 1}</h5>
-                        <Button 
-                          type="button" 
-                          variant="ghost" 
-                          size="sm" 
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="sm"
                           onClick={() => {
                             const updatedModules = [...modules];
                             updatedModules[moduleIndex].quizQuestions.splice(qIndex, 1);
@@ -448,15 +423,15 @@ const CourseForm: React.FC<CourseFormProps> = ({ onSuccess }) => {
                           <Trash className="h-4 w-4" />
                         </Button>
                       </div>
-                      
+
                       <div className="space-y-4">
                         <div className="space-y-2">
                           <Label htmlFor={`question-${moduleIndex}-${qIndex}`}>
                             Question
                           </Label>
-                          <Input 
-                            id={`question-${moduleIndex}-${qIndex}`} 
-                            placeholder="Enter question" 
+                          <Input
+                            id={`question-${moduleIndex}-${qIndex}`}
+                            placeholder="Enter question"
                             value={question.question}
                             onChange={(e) => handleQuestionChange(
                               moduleIndex, qIndex, 'question', e.target.value
@@ -464,15 +439,15 @@ const CourseForm: React.FC<CourseFormProps> = ({ onSuccess }) => {
                             required
                           />
                         </div>
-                        
+
                         <div className="space-y-3">
                           <Label>Answer Options</Label>
                           {question.options.map((option, oIndex) => (
                             <div key={oIndex} className="flex items-center">
-                              <div 
+                              <div
                                 className={`w-6 h-6 rounded-full mr-2 flex items-center justify-center
-                                  ${question.correctAnswer === oIndex ? 
-                                    'bg-green-100 text-green-600 border border-green-200' : 
+                                  ${question.correctAnswer === oIndex ?
+                                    'bg-green-100 text-green-600 border border-green-200' :
                                     'bg-gray-100 text-gray-400 border border-gray-200'}`}
                                 onClick={() => handleQuestionChange(
                                   moduleIndex, qIndex, 'correctAnswer', oIndex
@@ -482,8 +457,8 @@ const CourseForm: React.FC<CourseFormProps> = ({ onSuccess }) => {
                               >
                                 {question.correctAnswer === oIndex && <Check className="h-3 w-3" />}
                               </div>
-                              <Input 
-                                placeholder={`Option ${oIndex + 1}`} 
+                              <Input
+                                placeholder={`Option ${oIndex + 1}`}
                                 value={option}
                                 onChange={(e) => handleQuestionChange(
                                   moduleIndex, qIndex, 'option', e.target.value, oIndex
@@ -506,13 +481,13 @@ const CourseForm: React.FC<CourseFormProps> = ({ onSuccess }) => {
           </CardContent>
         </Card>
       ))}
-      
+
       <div className="flex gap-4 mb-8">
         <Button type="button" variant="outline" onClick={handleAddModule} className="flex-1">
           <Plus className="h-4 w-4 mr-2" /> Add Another Module
         </Button>
       </div>
-      
+
       <div className="bg-gray-50 p-4 rounded-lg border mb-8">
         <h3 className="font-medium mb-2">Ready to publish?</h3>
         <p className="text-sm text-gray-500 mb-4">
